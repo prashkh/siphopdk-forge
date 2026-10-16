@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools >= 77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "siphopdk-forge"
+version = "1.0.0"
+authors = [{name = "Flexcompute Inc.", email = "info@flexcompute.com"}]
+description = "SiPhoPDK: a synthetic 220 nm SOI + SiN O-band demonstration PDK for PhotonForge"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">= 3.10"
+dependencies = ["photonforge >= 2.0"]
+keywords = ["photonics", "pdk", "silicon photonics", "photonforge", "o-band", "drc", "lvs"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+test = ["pytest >= 7.2", "matplotlib >= 3.7"]
+
+[project.urls]
+homepage = "https://github.com/flexcompute/siphopdk-forge"
+documentation = "https://github.com/flexcompute/siphopdk-forge"
+
+# Declares the package a PDK: PhotonForge's GUI lists it under this name in its component
+# library and loads its technology and cells from the module.
+[project.entry-points."photonforge.pdk"]
+SiPhoPDK = "siphopdk"
+
+[tool.setuptools]
+packages = ["siphopdk", "siphopdk.rules"]
+
+[tool.setuptools.package-data]
+siphopdk = ["rules/*.drc", "rules/*.lvs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "klayout: needs the KLayout application (0.29.12 or newer); skipped when it is not installed",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100

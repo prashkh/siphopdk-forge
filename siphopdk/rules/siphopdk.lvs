@@ -1,0 +1,125 @@
+# =====================================================================
+# SiPhoPDK layout-versus-schematic runset  -  v1.0.0
+# =====================================================================
+# SiPhoPDK is a SYNTHETIC demonstration PDK. This runset is not a foundry
+# runset and must not be used for tape-out.
+#
+# KLayout extracts the optical and electrical nets of a layout, cell by
+# cell, and compares them with a SPICE schematic: one subcircuit per cell
+# whose pins are the cell's port and terminal names. PhotonForge writes that
+# schematic from a component's own connections:
+#
+#     import siphopdk
+#     results = siphopdk.lvs_check(component)
+#     print(results.verdict)
+#
+# which is photonforge.lvs_check(component, siphopdk.LVS_RULES). From a
+# shell, with a schematic of your own:
+#
+#     klayout -b -r siphopdk.lvs -rd gdsfile=chip.gds \
+#             -rd schematicfile=chip.cir -rd resultsfile=chip.lvsdb
+#
+# THE CONVENTION
+# --------------
+# Every SiPhoPDK cell draws:
+#   DEVREC   (100,0)  its outline, ending at the port planes;
+#   PINREC   (101,0)  a 200 nm box on each optical port;
+#   PINREC_E (102,0)  a 200 nm box on each electrical terminal;
+#   a text label on (0,0) with the port or terminal name, on the box.
+# A cell becomes a circuit, and its labelled boxes become its pins.
+# =====================================================================
+
+source($gdsfile)
+schematic($schematicfile)
+report_lvs($resultsfile)
+
+# Hierarchical extraction: each cell is compared with its own subcircuit.
+deep
+
+# ---------------------------------------------------------------------
+# Layers
+# ---------------------------------------------------------------------
+si     = input(1, 0)     # silicon core
+sin    = input(5, 0)     # silicon nitride
+npp    = input(24, 0)    # n++ contact implant
+ppp    = input(25, 0)    # p++ contact implant
+via1   = input(40, 0)    # contact, silicon or Ge to M1
+via2   = input(41, 0)    # heater to M1
+via3   = input(42, 0)    # M1 to M2
+m1     = input(50, 0)
+m2     = input(52, 0)
+devrec = input(100, 0)   # device outline
+pin    = input(101, 0)   # optical pin box
+pin_e  = input(102, 0)   # electrical pin box
+names  = labels(0, 0)    # port and terminal names
+
+# ---------------------------------------------------------------------
+# Optical connectivity
+# ---------------------------------------------------------------------
+# A waveguide outside every device outline is interconnect: it joins the
+# pins it touches into one net. Inside an outline the waveguide belongs to
+# the device, and is removed, or a device would join all its own ports into
+# one net. Silicon and nitride are separate layers that never touch.
+wg_si  = si - devrec
+wg_sin = sin - devrec
+connect(wg_si, pin)
+connect(wg_sin, pin)
+connect(pin, names)
+
+# ---------------------------------------------------------------------
+# Electrical connectivity
+# ---------------------------------------------------------------------
+# Only the contact implants and the metal stack conduct. Silicon between a
+# p contact and an n contact is a junction, and the heater film between its
+# two vias is a resistor: neither is listed, so each device shows its two
+# ends as two pins, and a trace that bridged them would merge two nets.
+connect(npp, via1)
+connect(ppp, via1)
+connect(via1, m1)
+connect(via2, m1)
+connect(m1, via3)
+connect(via3, m2)
+connect(m1, pin_e)
+connect(m2, pin_e)
+connect(pin_e, names)
+
+# The ports and terminals that the top cell exposes are named nets of the
+# top circuit (siphopdk.lvs_check labels them before export): make them its
+# pins, as the schematic's top circuit has them.
+netlist.make_top_level_pins
+
+# ---------------------------------------------------------------------
+# Terminals that are one node
+# ---------------------------------------------------------------------
+# Some cells offer several terminals on one piece of metal: a bond pad on
+# M1 and on M2 (M1, T), a via stack (M1, M2), and the electrode, whose
+# ground pads are one node and whose signal line joins its two ends. The
+# layout shows each of these as one net carrying several names ("M1,T"),
+# while the schematic gives each terminal its own pin. Join those pins in
+# the schematic, so that both sides describe the cell the same way.
+#
+# Only the groups below are joined. Any other net that carries two names
+# is a short inside a cell, and it stays a mismatch.
+ONE_NODE = [%w(M1 T), %w(M1 M2), %w(GAIN GAOUT GBIN GBOUT), %w(SIN SOUT)]
+
+extracted = netlist
+reference = schematic
+extracted.each_circuit do |circuit|
+  ref = reference.circuit_by_name(circuit.name) || reference.circuit_by_name(circuit.name.upcase)
+  next unless ref
+  circuit.each_net do |net|
+    parts = net.name.to_s.upcase.split(",")
+    next if parts.size < 2
+    next unless ONE_NODE.any? { |group| (parts - group).empty? }
+    nets = parts.map { |n| ref.net_by_name(n) }.compact.uniq
+    nets[1..-1].to_a.each { |other| ref.join_nets(nets[0], other) }
+  end
+end
+
+# A cell with no counterpart in the schematic (a route section, for example)
+# is flattened into its parent before the comparison.
+align
+
+compare
+
+# End of SiPhoPDK LVS runset v1.0.0

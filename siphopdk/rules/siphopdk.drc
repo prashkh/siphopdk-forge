@@ -1,0 +1,223 @@
+# =====================================================================
+# SiPhoPDK design rule deck  -  v1.0.0
+# =====================================================================
+# SiPhoPDK is a SYNTHETIC demonstration PDK. This deck is NOT a foundry
+# deck and must not be used for tape-out. It exists so that the whole
+# design flow - draw, check, fix, sign off - can be taught end to end on
+# a PDK we are free to publish.
+#
+# PROVENANCE
+# ----------
+# Every value below carries one of four tags:
+#   [PAPER] published in the open literature. Primary source is
+#           S. K. Yeh et al., "Silicon Photonics Platform for Next
+#           Generation Data Communication Technologies": 65 nm-class
+#           lithography, CD 3-sigma within 2 nm, trench-depth control.
+#   [OPEN]  taken from a public deck: the open-source SiEPIC EBeam PDK
+#           (github.com/SiEPIC/SiEPIC_EBeam_PDK).
+#   [PHYS]  implied by SiPhoPDK's own stack and port specs: the deck may
+#           never reject a waveguide the PDK itself ships.
+#   [SYNTH] invented for teaching. Plausible, deliberately round, and
+#           chosen so the rule is easy to demonstrate and to violate.
+#
+# CONVENTIONS
+# -----------
+#   Rule ids are <LAYER>.<CLASS>.<n>, class W width, S space, E
+#   enclosure, I inside/placement, O overlap, A area.
+#   Errors falling entirely inside EXCL_DRC (95,0) are waived.
+#
+# RUNNING THE DECK
+# ----------------
+# From Python, with KLayout 0.29.12 or newer installed:
+#
+#     import siphopdk
+#     results = siphopdk.drc_check(component)    # or a .gds / .oas path
+#     print(results.is_clean)
+#
+# which is photonforge.drc_check(component, siphopdk.DRC_RULES). From a
+# shell:
+#
+#     klayout -b -r siphopdk.drc -rd gdsfile=chip.gds -rd resultsfile=chip.lyrdb
+# =====================================================================
+
+source($gdsfile)
+report("SiPhoPDK DRC v1.0.0", $resultsfile)
+
+# ---------------------------------------------------------------------
+# Layers  [PHYS: siphopdk/_layers.py]
+# ---------------------------------------------------------------------
+si    = input(1, 0)     # full-etch silicon core, 220 nm
+slab  = input(2, 0)     # partial-etch slab, 90 nm remaining
+grat  = input(3, 0)     # grating shallow etch, 70 nm
+sin   = input(5, 0)     # silicon nitride, 300 nm
+ge    = input(8, 0)     # germanium epi
+nw    = input(20, 0)
+pw    = input(21, 0)
+np_   = input(22, 0)
+pp    = input(23, 0)
+npp   = input(24, 0)
+ppp   = input(25, 0)
+htr   = input(30, 0)    # TiN heater
+via1  = input(40, 0)    # contact to silicon / Ge
+via2  = input(41, 0)    # heater to M1
+via3  = input(42, 0)    # M1 to M2
+m1    = input(50, 0)
+m2    = input(52, 0)
+pad   = input(60, 0)
+dt    = input(70, 0)
+fp    = input(80, 0)    # floorplan
+excl  = input(95, 0)    # DRC waiver region
+devrec = input(100, 0)
+
+# Limits are exact: a shape 1 nm under a limit is flagged and one drawn at the limit passes
+# (tests/drc_deck_test.py checks every width, space and enclosure rule both ways).
+
+# Waive anything sitting entirely inside EXCL_DRC. Width and space checks
+# return edge pairs, the rest return regions, so convert before filtering.
+def waive(res, excl)
+  (res.edge_pairs? ? res.polygons : res).outside(excl)
+end
+
+# =====================================================================
+# A. Flow checks (not physical, but they catch assembly mistakes)
+# =====================================================================
+# FP.1 [SYNTH] every fabricated layer must sit inside the floorplan.
+all_drawn = si + slab + sin + ge + htr + m1 + m2
+waive(all_drawn - fp, excl).output("FP.1", "Geometry outside FLOORPLAN")
+
+# DEV.1 [OPEN: SiEPIC "Devices cannot be overlapping"] device boundaries
+# must not overlap, or the extracted netlist is ambiguous.
+waive(devrec.merged(2), excl).output("DEV.1", "DEVREC boundaries overlap")
+
+# =====================================================================
+# B. Silicon, full etch
+# =====================================================================
+# SI.W.1 [PAPER + PHYS] 65 nm-class lithography prints well below this,
+# but the narrowest feature SiPhoPDK itself ships is the 400 nm strip and
+# the grating tooth. 150 nm leaves room for inverse-taper tips while
+# rejecting unprintable slivers. [OPEN: SiEPIC uses 70 nm for e-beam]
+waive(si.width(0.15, angle_limit(80)), excl).output("SI.W.1", "SI width < 150 nm")
+# SI.S.1 [PAPER] CD control of 2 nm 3-sigma supports a tight space; the
+# limit here is litho bridging, not CD.
+waive(si.space(0.15, angle_limit(80)), excl).output("SI.S.1", "SI space < 150 nm")
+# SI.A.1 [SYNTH] anti-sliver: fragments this small are boolean artefacts.
+# Set above 0.15^2 so a legal-width but tiny fragment is still caught.
+waive(si.with_area(0.0 .. 0.03), excl).output("SI.A.1", "SI area < 0.03 um^2")
+
+# =====================================================================
+# C. Silicon, partial etch (slab)
+# =====================================================================
+# SLAB.W.1 / SLAB.S.1 [SYNTH] the partial etch is coarser than the full
+# etch on every platform of this class.
+waive(slab.width(0.30, angle_limit(80)), excl).output("SLAB.W.1", "SLAB width < 300 nm")
+waive(slab.space(0.30, angle_limit(80)), excl).output("SLAB.S.1", "SLAB space < 300 nm")
+# SLAB.E.1 [PHYS] a rib waveguide is a core with a slab wing on each side, and
+# the wing carries the mode, so it has a minimum width of its own: 500 nm, which
+# is what the SI_RIB_O port spec draws (500 nm core in a 3 um slab).
+#
+# This rule was first written as "the slab must enclose the core by 500 nm"
+# (si.interacting(slab).enclosed(slab, 0.5)). That is un-satisfiable by a real
+# device: at a strip-to-rib transition the core has to cross the slab boundary,
+# so the merged silicon polygon always sticks out of the slab. Checking the wing
+# instead expresses the same intent, passes every legitimate launch, and still
+# catches a slab that hugs the core too tightly.
+# Two exemptions, each found by running this rule against a real cell:
+#   * `angle_limit(80)` skips the near-perpendicular pairs at the ends of a
+#     tapering wing, which are corners and not a narrow wing.
+#   * a sub-500 nm gap between two cores is a coupler by definition on this
+#     platform (the ring-to-bus gap is 180 nm), and the slab between them is
+#     therefore intentionally narrow, so those regions are excluded.
+slab_wing = slab - si
+coupling_gap = si.space(0.50).polygons
+wing_error = slab_wing.width(0.50, angle_limit(80)).polygons.outside(coupling_gap)
+waive(wing_error, excl).output("SLAB.E.1", "SLAB wing beside a rib core must be >= 500 nm wide")
+
+# =====================================================================
+# D. Grating shallow etch
+# =====================================================================
+# GRAT.W.1 / GRAT.S.1 [PAPER] grating trench depth is one of the process
+# indices the platform paper tracks; the printed pitch is what limits us here.
+waive(grat.width(0.10, angle_limit(80)), excl).output("GRAT.W.1", "GRAT width < 100 nm")
+waive(grat.space(0.10, angle_limit(80)), excl).output("GRAT.S.1", "GRAT space < 100 nm")
+# GRAT.I.1 [PHYS] the shallow etch only means anything inside silicon.
+waive(grat.not_inside(si), excl).output("GRAT.I.1", "GRAT must be inside SI")
+
+# =====================================================================
+# E. Silicon nitride
+# =====================================================================
+# SIN.W.1 / SIN.S.1 [OPEN: SiEPIC SiN deck uses 120 nm] widened to 300 nm
+# because SiPhoPDK's nitride is a 1 um-wide routing and edge-coupler
+# layer, not a fine-feature layer.
+waive(sin.width(0.30, angle_limit(80)), excl).output("SIN.W.1", "SIN width < 300 nm")
+waive(sin.space(0.30, angle_limit(80)), excl).output("SIN.S.1", "SIN space < 300 nm")
+
+# =====================================================================
+# F. Germanium
+# =====================================================================
+# GE.W.1 / GE.S.1 [SYNTH] selective epi needs a generous window and a
+# generous keep-away between windows.
+waive(ge.width(0.60, projection), excl).output("GE.W.1", "GE width < 600 nm")
+waive(ge.space(1.00, projection), excl).output("GE.S.1", "GE space < 1 um")
+# GE.E.1 [PHYS] the stack grows Ge in a window on the slab, so the slab
+# must exist under it and extend 300 nm past it.
+waive(ge.enclosed(slab, 0.30, projection), excl).output("GE.E.1", "SLAB must enclose GE by >= 300 nm")
+
+# =====================================================================
+# G. Implants
+# =====================================================================
+# IMP.W.1 [SYNTH] implant masks are coarse.
+waive((nw + pw).width(0.30, projection), excl).output("IMP.W.1", "Well implant width < 300 nm")
+# IMP.O.1 [SYNTH] n and p wells may not overlap: counter-doping makes the
+# junction position meaningless and the CHARGE model unphysical.
+waive(nw.and(pw), excl).output("IMP.O.1", "NW and PW overlap")
+# IMP.E.1 [SYNTH] the graded implants nest: high dose inside low dose.
+waive(np_.not_inside(nw), excl).output("IMP.E.1", "NP must be inside NW")
+waive(pp.not_inside(pw), excl).output("IMP.E.2", "PP must be inside PW")
+waive(npp.not_inside(np_), excl).output("IMP.E.3", "NPP must be inside NP")
+waive(ppp.not_inside(pp), excl).output("IMP.E.4", "PPP must be inside PP")
+# IMP.I.1 [PHYS] an implant only exists inside silicon.
+silicon = si + slab
+waive((npp + ppp).not_inside(silicon), excl).output("IMP.I.1", "Contact implant must land on silicon")
+
+# =====================================================================
+# H. Contacts, heater and metals
+# =====================================================================
+# V1.W.1 / V1.S.1 [OPEN: the SiEPIC EBeam via rules
+# uses 0.2 um vias on a 0.3 um pitch]
+waive(via1.width(0.18, projection), excl).output("V1.W.1", "VIA1 width < 180 nm")
+waive(via1.space(0.24, projection), excl).output("V1.S.1", "VIA1 space < 240 nm")
+# V1.I.1 [PHYS] a contact has to land on something conductive.
+waive(via1.not_inside(silicon + ge), excl).output("V1.I.1", "VIA1 must land on silicon or Ge")
+# V1.I.2 [SYNTH] and on silicon it must land on a contact implant, or the
+# contact is rectifying. This is the rule that ties BEOL to the implants.
+via1_on_si = via1.inside(silicon)
+waive(via1_on_si.not_inside(npp + ppp), excl).output("V1.I.2", "VIA1 on silicon must be covered by NPP or PPP")
+# M1.W.1 / M1.S.1 [OPEN: SiEPIC metal deck, M1 0.5 um]
+waive(m1.width(0.50, projection), excl).output("M1.W.1", "M1 width < 500 nm")
+waive(m1.space(0.50, projection), excl).output("M1.S.1", "M1 space < 500 nm")
+# M1.E.1 / M1.E.2 [OPEN: SiEPIC via deck enclosure 0.05, relaxed here]
+waive(via1.enclosed(m1, 0.10, projection), excl).output("M1.E.1", "M1 must enclose VIA1 by >= 100 nm")
+waive(via2.enclosed(m1, 0.10, projection), excl).output("M1.E.2", "M1 must enclose VIA2 by >= 100 nm")
+# HTR.W.1 / HTR.S.1 [SYNTH] the heater is a resistor, not a wire.
+# angle_limit is not decoration. The heater is the one layer in the PDK that is a curve
+# joined to a straight line, and KLayout's default 90 degree limit still pairs up the
+# chords either side of such a join, because a chord of a circle sits a degree or two off
+# the right angle. Without the limit every lead-to-arc corner reads as a width violation.
+waive(htr.width(0.50, projection, angle_limit(80)), excl).output("HTR.W.1", "HTR width < 500 nm")
+waive(htr.space(1.00, projection, angle_limit(80)), excl).output("HTR.S.1", "HTR space < 1 um")
+# V2.I.1 [PHYS] the heater via lands on the heater.
+waive(via2.not_inside(htr), excl).output("V2.I.1", "VIA2 must be inside HTR")
+# V3.W.1 / V3.S.1 [SYNTH] the upper via is larger, it carries RF and power.
+waive(via3.width(0.25, projection), excl).output("V3.W.1", "VIA3 width < 250 nm")
+waive(via3.space(0.35, projection), excl).output("V3.S.1", "VIA3 space < 350 nm")
+waive(via3.enclosed(m1, 0.10, projection), excl).output("M1.E.3", "M1 must enclose VIA3 by >= 100 nm")
+# M2 [SYNTH] thick top metal for RF and power.
+waive(m2.width(1.00, projection), excl).output("M2.W.1", "M2 width < 1 um")
+waive(m2.space(1.00, projection), excl).output("M2.S.1", "M2 space < 1 um")
+waive(via3.enclosed(m2, 0.15, projection), excl).output("M2.E.1", "M2 must enclose VIA3 by >= 150 nm")
+# PAD [SYNTH] bond pads are big and must sit inside top metal.
+waive(pad.not_inside(m2), excl).output("PAD.I.1", "PAD opening must be inside M2")
+waive(pad.enclosed(m2, 2.00, projection), excl).output("PAD.E.1", "M2 must enclose PAD by >= 2 um")
+waive(pad.width(40.0, projection), excl).output("PAD.W.1", "PAD width < 40 um")
+
+# End of SiPhoPDK deck v1.0.0
