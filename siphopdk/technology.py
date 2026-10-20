@@ -147,7 +147,7 @@ def siphopdk(
 
     extrusion_specs = [
         # substrate and cladding
-        pf.ExtrusionSpec(pf.MaskSpec(), _SUBSTRATE, (-pf.Z_INF, -box_thickness)),
+        pf.ExtrusionSpec(pf.MaskSpec(), _SUBSTRATE, (-pf.Z_INF, 0)),
         pf.ExtrusionSpec(pf.MaskSpec(), _OXIDE, (-box_thickness, z_top)),
         # silicon: full etch, then the partial-etch slab
         pf.ExtrusionSpec(
@@ -180,7 +180,7 @@ def siphopdk(
         pf.ExtrusionSpec(pf.MaskSpec(_L["VIA3"]), _VIA, (z_m1_top, z_m2)),
         pf.ExtrusionSpec(pf.MaskSpec(_L["M2"]), _M2, (z_m2, z_m2_top)),
         # pad opening and deep trench
-        pf.ExtrusionSpec(pf.MaskSpec(_L["PAD"]), _OPENING, (z_m2_top, pf.Z_INF)),
+        pf.ExtrusionSpec(pf.MaskSpec(_L["PAD"]), _OPENING, (z_m2_top, z_top)),
         pf.ExtrusionSpec(pf.MaskSpec(_L["DT"]), _TRENCH, (-pf.Z_INF, pf.Z_INF)),
     ]
 
@@ -269,6 +269,6 @@ def siphopdk(
         layers,
         extrusion_specs,
         ports,
-        background_medium=_OXIDE,
+        background_medium=_OPENING,
         connected_layers=connected_layers,
     )
