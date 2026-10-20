@@ -28,10 +28,10 @@
 # after the install (menu **Kernel**, then **Restart Kernel**).
 
 # %%
-# %pip install -q "siphopdk-forge @ git+https://github.com/prashkh/siphopdk-forge"
+# %pip install -q --upgrade "siphopdk-forge"
 
 # If you have the wheel file, install that file instead:
-# %pip install -q siphopdk_forge-1.0.0-py3-none-any.whl
+# %pip install -q siphopdk_forge-*-py3-none-any.whl
 
 # %% [markdown]
 # ## 2. Check the installation

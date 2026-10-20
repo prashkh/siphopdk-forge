@@ -6,34 +6,73 @@ on:
       - 'v*.*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build wheel and source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-      - name: Install pypa/build
-        run: python3 -m pip install build --user
-      - name: Build a binary wheel and a source tarball
-        run: python3 -m build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+
+          with open("pyproject.toml", "rb") as file:
+              version = tomllib.load(file)["project"]["version"]
+          expected = f"v{version}"
+          actual = os.environ["GITHUB_REF_NAME"]
+          if actual != expected:
+              raise SystemExit(f"Release tag {actual!r} does not match package version {expected!r}")
+          PY
+      - name: Build wheel and source distribution
+        run: python -m build
+      - name: Check distribution metadata
+        run: python -m twine check --strict dist/*
+      - name: Smoke-test the built wheel
+        run: |
+          python -m venv "$RUNNER_TEMP/package-smoke-test"
+          "$RUNNER_TEMP/package-smoke-test/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/package-smoke-test/bin/python" - <<'PY'
+          from importlib.metadata import entry_points, version
+
+          import siphopdk
+
+          assert version("siphopdk-forge") == siphopdk.__version__
+          assert siphopdk.DRC_RULES.is_file()
+          assert siphopdk.LVS_RULES.is_file()
+          pdks = entry_points(group="photonforge.pdk")
+          assert any(entry.name == "SiPhoPDK" and entry.value == "siphopdk" for entry in pdks)
+          PY
+      - uses: actions/upload-artifact@v7
         with:
           path: ./dist/*
-          name: artifact
+          name: distributions
+          if-no-files-found: error
 
   upload_pypi:
-    name: Upload wheel to PyPI
+    name: Upload distributions to PyPI
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [build]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
+          name: distributions
           path: dist
-          merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@v1.12.4
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           skip-existing: true
           verbose: true
