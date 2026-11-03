@@ -10,17 +10,39 @@ The package ships two KLayout rule files:
 files can also be given to KLayout directly, or chosen in the DRC panel of the PhotonForge GUI.
 """
 
-from pathlib import Path
+from contextlib import contextmanager
+from importlib.resources import as_file, files
 
 import photonforge as pf
 
-RULES_DIR = Path(__file__).resolve().parent / "rules"
+# The rule files are package resources and can be inside a zip archive, so they are never
+# addressed as paths of the installed package. ``rules_path`` gives a real file on disk.
+_RULES = files(__package__) / "rules"
 
-#: KLayout DRC runset for SiPhoPDK.
-DRC_RULES = RULES_DIR / "siphopdk.drc"
+#: KLayout DRC runset for SiPhoPDK (resource of the installed package).
+DRC_RULES = _RULES / "siphopdk.drc"
 
-#: KLayout LVS runset for SiPhoPDK.
-LVS_RULES = RULES_DIR / "siphopdk.lvs"
+#: KLayout LVS runset for SiPhoPDK (resource of the installed package).
+LVS_RULES = _RULES / "siphopdk.lvs"
+
+
+@contextmanager
+def rules_path(rules=DRC_RULES):
+    """Context manager that gives the path of a rule file on the file system.
+
+    Args:
+        rules: Rule file resource, ``DRC_RULES`` or ``LVS_RULES``.
+
+    Yields:
+        pathlib.Path: Path of the rule file. When the package is installed in a zip archive
+        the file is extracted to a temporary location that exists inside the ``with`` block
+        only, so use the path there, for instance to give it to KLayout directly::
+
+            with siphopdk.rules_path() as path:
+                subprocess.run(["klayout", "-b", "-r", str(path), ...])
+    """
+    with as_file(rules) as path:
+        yield path
 
 
 def drc_check(source, **kwargs):
@@ -36,7 +58,8 @@ def drc_check(source, **kwargs):
         verdict.
     """
     kwargs.setdefault("engine", "klayout")
-    return pf.drc_check(source, DRC_RULES, **kwargs)
+    with rules_path(DRC_RULES) as path:
+        return pf.drc_check(source, path, **kwargs)
 
 
 _LABEL_LAYER = (0, 0)
@@ -128,4 +151,5 @@ def lvs_check(source, **kwargs):
     kwargs.setdefault("engine", "klayout")
     if isinstance(source, pf.Component) and kwargs.get("pre_export_function") is None:
         kwargs["pre_export_function"] = lvs_pins(source)
-    return pf.lvs_check(source, LVS_RULES, **kwargs)
+    with rules_path(LVS_RULES) as path:
+        return pf.lvs_check(source, path, **kwargs)

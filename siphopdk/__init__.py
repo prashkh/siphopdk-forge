@@ -49,7 +49,7 @@ from ._cross_section import (
     plot_stack_panels,
 )
 from .technology import siphopdk
-from .verification import DRC_RULES, LVS_RULES, drc_check, lvs_check
+from .verification import DRC_RULES, LVS_RULES, drc_check, lvs_check, rules_path
 
 __version__ = "1.0.0"
 
@@ -86,6 +86,7 @@ __all__ = [
     "plot_cross_section",
     "plot_stack_panels",
     "pn_phase_shifter",
+    "rules_path",
     "si_to_sin",
     "sin_edge_coupler",
     "siphopdk",
