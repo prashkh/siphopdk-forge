@@ -174,6 +174,12 @@ teaching and for trying out a design flow, not for predicting the performance of
 
 ## Changelog
 
+### Unreleased
+
+- `bend`: the model now uses the drawn path length, Euler sections included, instead of the
+  circular arc. At the default `euler_fraction=0.2` the arc was 3 % short, a 6.5 rad phase error
+  per 90° bend at 1310 nm.
+
 ### 1.0.0 - 2026-10-15
 
 - First public release.

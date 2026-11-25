@@ -126,8 +126,9 @@ def bend(*, radius: pft.PositiveDimension = 10.0, angle: pft.Angle = 90.0,
     tech = _tech(technology)
     c = pf.parametric.bend(port_spec=_spec(tech, port_spec), radius=radius, angle=angle,
                            euler_fraction=euler_fraction, technology=tech)
-    arc = abs(np.deg2rad(angle)) * radius
-    c.add_model(_wg_model(arc, port_spec=port_spec,
+    # length=None: the model measures the drawn path, Euler sections included. The circular
+    # arc (angle x radius) is 3 % short at euler_fraction 0.2, a 6.5 rad phase error per bend.
+    c.add_model(_wg_model(None, port_spec=port_spec,
                           extra_loss=cal.LOSS_BEND_90 * abs(angle) / 90), "analytic")
     c.activate_model("analytic")
     _named(c, "bend", r=radius, a=angle)
