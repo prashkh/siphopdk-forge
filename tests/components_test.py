@@ -1,5 +1,6 @@
 import warnings
 
+import numpy as np
 import photonforge as pf
 import pytest
 
@@ -55,3 +56,22 @@ def test_photonforge_gui_finds_the_pdk():
     assert loaded.get("technology") == "SiPhoPDK", loaded.get("error")
     assert not loaded["failed"], loaded["failed"]
     assert len(loaded["entries"]) == len(siphopdk.component_names)
+
+
+@pytest.mark.parametrize("angle", [90.0, -90.0, 45.0])
+@pytest.mark.parametrize("euler_fraction", [0.0, 0.2, 0.5, 1.0])
+def test_bend_model_uses_the_drawn_length(euler_fraction, angle):
+    """The Euler sections make a bend longer than its circular arc; the model must see that."""
+    from siphopdk import _calibration as cal
+
+    tech = siphopdk.siphopdk()
+    bend = siphopdk.bend(angle=angle, euler_fraction=euler_fraction, technology=tech)
+    expected = pf.AnalyticWaveguideModel(
+        n_eff=cal.N_EFF_STRIP, n_group=cal.N_GROUP_STRIP, length=pf.route_length(bend),
+        propagation_loss=cal.LOSS_STRIP, extra_loss=cal.LOSS_BEND_90 * abs(angle) / 90,
+        reference_frequency=cal.REF_FREQUENCY,
+    )
+    freqs = [cal.REF_FREQUENCY * 0.99, cal.REF_FREQUENCY, cal.REF_FREQUENCY * 1.01]
+    got = bend.s_matrix(freqs, show_progress=False)[("P0@0", "P1@0")]
+    want = expected.s_matrix(bend, freqs, show_progress=False)[("P0@0", "P1@0")]
+    assert np.allclose(got, want, rtol=0, atol=1e-9)
